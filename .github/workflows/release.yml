@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install pnpm
+        run: npm i -g pnpm
+
       - name: Install make
         run: choco install make -y
 

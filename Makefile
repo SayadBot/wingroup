@@ -25,7 +25,7 @@ help:
 	@printf "  make clean    - clean .NET build artifacts\n"
 
 setup:
-	corepack pnpm install
+	pnpm install
 
 icon: setup
 	node scripts/build-icon.mjs
