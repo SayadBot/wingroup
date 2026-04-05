@@ -55,10 +55,18 @@ jobs:
         run: |
           $portable = Get-Item "dist/WinGroup.exe"
           $setup = Get-Item "dist/WinGroup-Setup.exe"
+          $maxPortableMb = 80
+          $maxSetupMb = 60
           $portableMb = [Math]::Round($portable.Length / 1MB, 2)
           $setupMb = [Math]::Round($setup.Length / 1MB, 2)
           "Portable size: $portableMb MB"
           "Setup size: $setupMb MB"
+          if ($portableMb -gt $maxPortableMb) {
+            throw "WinGroup.exe is too large ($portableMb MB). Limit is $maxPortableMb MB."
+          }
+          if ($setupMb -gt $maxSetupMb) {
+            throw "WinGroup-Setup.exe is too large ($setupMb MB). Limit is $maxSetupMb MB."
+          }
           "### Release Artifact Sizes" >> $env:GITHUB_STEP_SUMMARY
           "- WinGroup.exe: $portableMb MB" >> $env:GITHUB_STEP_SUMMARY
           "- WinGroup-Setup.exe: $setupMb MB" >> $env:GITHUB_STEP_SUMMARY

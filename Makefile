@@ -40,7 +40,7 @@ run: icon
 	dotnet run --project $(PROJECT)
 
 publish: icon restore
-	dotnet publish $(PROJECT) -c $(CONFIG) -r $(RID) --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$(VERSION) -p:InformationalVersion=$(INFO_VERSION) -o $(OUT_DIR)
+	dotnet publish $(PROJECT) -c $(CONFIG) -r $(RID) --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$(VERSION) -p:InformationalVersion=$(INFO_VERSION) -o $(OUT_DIR)
 
 portable: publish
 	pwsh -NoProfile -Command "New-Item -ItemType Directory -Force -Path '$(DIST_DIR)' | Out-Null; Copy-Item '$(OUT_DIR)/WinGroup.exe' '$(DIST_DIR)/$(PORTABLE_FILENAME)' -Force"
