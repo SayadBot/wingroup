@@ -48,14 +48,10 @@ jobs:
       - name: Publish win-x64
         run: make publish VERSION=${{ steps.version.outputs.version }} INFO_VERSION=${{ github.ref_name }}
 
-      - name: Archive release
-        shell: pwsh
-        run: Compress-Archive -Path publish/win-x64/* -DestinationPath "WinGroup-${{ steps.version.outputs.version }}-win-x64.zip"
-
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: WinGroup ${{ github.ref_name }}
-          files: WinGroup-${{ steps.version.outputs.version }}-win-x64.zip
+          files: publish/win-x64/WinGroup.exe
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}

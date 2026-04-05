@@ -14,7 +14,7 @@ help:
 	@printf "  make restore  - restore .NET dependencies\n"
 	@printf "  make build    - build the WinGroup app\n"
 	@printf "  make run      - run the WinGroup app\n"
-	@printf "  make publish  - publish release output\n"
+	@printf "  make publish  - publish single-file exe output\n"
 	@printf "  make clean    - clean .NET build artifacts\n"
 
 setup:
@@ -33,7 +33,7 @@ run: icon
 	dotnet run --project $(PROJECT)
 
 publish: icon restore
-	dotnet publish $(PROJECT) -c $(CONFIG) -r $(RID) --self-contained false -p:Version=$(VERSION) -p:InformationalVersion=$(INFO_VERSION) -o $(OUT_DIR)
+	dotnet publish $(PROJECT) -c $(CONFIG) -r $(RID) --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$(VERSION) -p:InformationalVersion=$(INFO_VERSION) -o $(OUT_DIR)
 
 clean:
 	dotnet clean $(PROJECT)
