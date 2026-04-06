@@ -14,8 +14,6 @@ internal static class Win32
     public const int WS_DLGFRAME = 0x00400000;
     public const int WS_CAPTION = WS_BORDER | WS_DLGFRAME;
     public const int WS_THICKFRAME = 0x00040000;
-    public const int WS_MINIMIZE = 0x20000000;
-    public const int WS_MAXIMIZE = 0x01000000;
 
     public const int WS_EX_TOOLWINDOW = 0x00000080;
     public const int WS_EX_WINDOWEDGE = 0x00000100;
@@ -25,10 +23,7 @@ internal static class Win32
     public const int WS_EX_NOACTIVATE = 0x08000000;
 
     public const int SW_HIDE = 0;
-    public const int SW_SHOWNORMAL = 1;
     public const int SW_SHOW = 5;
-    public const int SW_SHOWMINIMIZED = 2;
-    public const int SW_SHOWMAXIMIZED = 3;
 
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
@@ -57,7 +52,6 @@ internal static class Win32
     public const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016;
     public const uint EVENT_SYSTEM_MINIMIZEEND = 0x0017;
     public const uint EVENT_OBJECT_DESTROY = 0x8001;
-    public const uint EVENT_OBJECT_SHOW = 0x8002;
     public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
     public const int OBJID_WINDOW = 0;
     public const uint WINEVENT_OUTOFCONTEXT = 0;

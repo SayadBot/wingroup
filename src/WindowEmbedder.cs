@@ -9,8 +9,6 @@ internal sealed class WindowEmbedder : IDisposable
     private readonly Dictionary<IntPtr, Panel> _windowToPane = new();
     private readonly Win32.WinEventDelegate _windowEventCallback;
     private readonly IntPtr _moveSizeAndMinimizeHook;
-    private readonly IntPtr _locationChangeHook;
-    private readonly IntPtr _showHook;
     private readonly IntPtr _destroyHook;
 
     public event Action<Panel>? EmbeddedWindowDetached;
@@ -22,22 +20,6 @@ internal sealed class WindowEmbedder : IDisposable
         _moveSizeAndMinimizeHook = Win32.SetWinEventHook(
             Win32.EVENT_SYSTEM_MOVESIZESTART,
             Win32.EVENT_SYSTEM_MINIMIZEEND,
-            IntPtr.Zero,
-            _windowEventCallback,
-            0,
-            0,
-            Win32.WINEVENT_OUTOFCONTEXT | Win32.WINEVENT_SKIPOWNPROCESS);
-        _locationChangeHook = Win32.SetWinEventHook(
-            Win32.EVENT_OBJECT_LOCATIONCHANGE,
-            Win32.EVENT_OBJECT_LOCATIONCHANGE,
-            IntPtr.Zero,
-            _windowEventCallback,
-            0,
-            0,
-            Win32.WINEVENT_OUTOFCONTEXT | Win32.WINEVENT_SKIPOWNPROCESS);
-        _showHook = Win32.SetWinEventHook(
-            Win32.EVENT_OBJECT_SHOW,
-            Win32.EVENT_OBJECT_SHOW,
             IntPtr.Zero,
             _windowEventCallback,
             0,
@@ -267,49 +249,48 @@ internal sealed class WindowEmbedder : IDisposable
             return;
         }
 
-        if (_uiControl.InvokeRequired)
+        if (!_windowToPane.TryGetValue(hwnd, out _))
         {
-            _uiControl.BeginInvoke(new Action(() => HandleWindowEvent(eventType, hwnd, idObject, idChild, idEventThread)));
             return;
         }
 
-        HandleWindowEvent(eventType, hwnd, idObject, idChild, idEventThread);
-    }
-
-    private void HandleWindowEvent(uint eventType, IntPtr hwnd, int idObject, int idChild, uint idEventThread)
-    {
-        if (_windowToPane.TryGetValue(hwnd, out var pane)
-            && _paneToWindow.TryGetValue(pane, out var state))
+        if (_uiControl.InvokeRequired)
         {
-            if (eventType == Win32.EVENT_SYSTEM_MOVESIZESTART
-                || eventType == Win32.EVENT_SYSTEM_MINIMIZESTART
-                || eventType == Win32.EVENT_SYSTEM_MINIMIZEEND)
-            {
-                DetachTrackedWindow(hwnd, restoreWindowState: true);
-                return;
-            }
-
-            if (eventType == Win32.EVENT_SYSTEM_MOVESIZEEND)
-            {
-                state.IsInMoveSizeSession = false;
-                FitWindowToHost(state, true, out _);
-                return;
-            }
-
-            if (eventType == Win32.EVENT_OBJECT_DESTROY
-                && idObject == Win32.OBJID_WINDOW
-                && idChild == 0)
-            {
-                HandleTrackedWindowDestroyed(hwnd);
-                return;
-            }
+            _uiControl.BeginInvoke(new Action(() => HandleWindowEvent(eventType, hwnd, idObject, idChild)));
+            return;
         }
 
-        if ((eventType == Win32.EVENT_OBJECT_SHOW || eventType == Win32.EVENT_OBJECT_LOCATIONCHANGE)
+        HandleWindowEvent(eventType, hwnd, idObject, idChild);
+    }
+
+    private void HandleWindowEvent(uint eventType, IntPtr hwnd, int idObject, int idChild)
+    {
+        if (!_windowToPane.TryGetValue(hwnd, out var pane)
+            || !_paneToWindow.TryGetValue(pane, out var state))
+        {
+            return;
+        }
+
+        if (eventType == Win32.EVENT_SYSTEM_MOVESIZESTART
+            || eventType == Win32.EVENT_SYSTEM_MINIMIZESTART
+            || eventType == Win32.EVENT_SYSTEM_MINIMIZEEND)
+        {
+            DetachTrackedWindow(hwnd, restoreWindowState: true);
+            return;
+        }
+
+        if (eventType == Win32.EVENT_SYSTEM_MOVESIZEEND)
+        {
+            state.IsInMoveSizeSession = false;
+            FitWindowToHost(state, true, out _);
+            return;
+        }
+
+        if (eventType == Win32.EVENT_OBJECT_DESTROY
             && idObject == Win32.OBJID_WINDOW
             && idChild == 0)
         {
-            HandleRelatedFullscreenWindowEvent(hwnd, idEventThread);
+            HandleTrackedWindowDestroyed(hwnd);
         }
     }
 
@@ -331,7 +312,7 @@ internal sealed class WindowEmbedder : IDisposable
 
         if (restoreWindowState)
         {
-            RestoreWindowStateForEventDetach(state);
+            RestoreWindowState(state);
         }
 
         EmbeddedWindowDetached?.Invoke(pane);
@@ -344,103 +325,14 @@ internal sealed class WindowEmbedder : IDisposable
             Win32.UnhookWinEvent(_moveSizeAndMinimizeHook);
         }
 
-        if (_locationChangeHook != IntPtr.Zero)
-        {
-            Win32.UnhookWinEvent(_locationChangeHook);
-        }
-
-        if (_showHook != IntPtr.Zero)
-        {
-            Win32.UnhookWinEvent(_showHook);
-        }
-
         if (_destroyHook != IntPtr.Zero)
         {
             Win32.UnhookWinEvent(_destroyHook);
         }
     }
 
-    private void HandleRelatedFullscreenWindowEvent(IntPtr candidateHwnd, uint idEventThread)
-    {
-        if (!IsFullscreenTopLevelWindow(candidateHwnd))
-        {
-            return;
-        }
-
-        var candidateThreadId = Win32.GetWindowThreadProcessId(candidateHwnd, out var candidateProcessId);
-        if (candidateThreadId == 0 || candidateProcessId == 0)
-        {
-            return;
-        }
-
-        IntPtr trackedHwndToDetach = IntPtr.Zero;
-        var nowTicks = Environment.TickCount64;
-        foreach (var state in _paneToWindow.Values)
-        {
-            if (state.ProcessId != candidateProcessId
-                || (state.ThreadId != candidateThreadId && state.ThreadId != idEventThread))
-            {
-                continue;
-            }
-
-            if (!RegisterFullscreenSignal(state, candidateHwnd, nowTicks))
-            {
-                return;
-            }
-
-            trackedHwndToDetach = state.Hwnd;
-            break;
-        }
-
-        if (trackedHwndToDetach != IntPtr.Zero)
-        {
-            DetachTrackedWindow(trackedHwndToDetach, restoreWindowState: true);
-        }
-    }
-
-    private static bool IsFullscreenTopLevelWindow(IntPtr hwnd)
-    {
-        if (!Win32.IsWindow(hwnd) || !Win32.IsWindowVisible(hwnd))
-        {
-            return false;
-        }
-
-        if (Win32.GetParent(hwnd) != IntPtr.Zero || Win32.GetWindow(hwnd, Win32.GW_OWNER) != IntPtr.Zero)
-        {
-            return false;
-        }
-
-        if (!Win32.GetWindowRect(hwnd, out var windowRect))
-        {
-            return false;
-        }
-
-        var screenBounds = Screen.FromHandle(hwnd).Bounds;
-        var tolerance = 8;
-        return Math.Abs(windowRect.Left - screenBounds.Left) <= tolerance
-            && Math.Abs(windowRect.Top - screenBounds.Top) <= tolerance
-            && Math.Abs(windowRect.Right - screenBounds.Right) <= tolerance
-            && Math.Abs(windowRect.Bottom - screenBounds.Bottom) <= tolerance;
-    }
-
-    private static bool RegisterFullscreenSignal(EmbeddedWindowState state, IntPtr candidateHwnd, long nowTicks)
-    {
-        if (state.LastFullscreenCandidate != candidateHwnd || nowTicks - state.LastFullscreenSignalTick > 500)
-        {
-            state.LastFullscreenCandidate = candidateHwnd;
-            state.LastFullscreenSignalTick = nowTicks;
-            state.FullscreenSignalCount = 1;
-            return false;
-        }
-
-        state.LastFullscreenSignalTick = nowTicks;
-        state.FullscreenSignalCount++;
-        return state.FullscreenSignalCount >= 2;
-    }
-
     private static EmbeddedWindowState CaptureState(IntPtr hwnd, IntPtr hostHandle)
     {
-        var threadId = Win32.GetWindowThreadProcessId(hwnd, out var processId);
         var originalStyle = Win32.GetWindowLong(hwnd, Win32.GWL_STYLE);
         var originalExStyle = Win32.GetWindowLong(hwnd, Win32.GWL_EXSTYLE);
         var originalParent = Win32.GetParent(hwnd);
@@ -454,7 +346,7 @@ internal sealed class WindowEmbedder : IDisposable
         var hasPlacement = Win32.GetWindowPlacement(hwnd, ref placement);
         var hasRect = Win32.GetWindowRect(hwnd, out var rect);
 
-        return new EmbeddedWindowState(hwnd, hostHandle, processId, threadId, originalParent, originalStyle, originalExStyle, hasPlacement, placement, hasRect, rect, wasVisible);
+        return new EmbeddedWindowState(hwnd, hostHandle, originalParent, originalStyle, originalExStyle, hasPlacement, placement, hasRect, rect, wasVisible);
     }
 
     private static void RestoreWindowState(EmbeddedWindowState state)
@@ -495,24 +387,6 @@ internal sealed class WindowEmbedder : IDisposable
         }
 
         Win32.ShowWindow(state.Hwnd, state.WasVisible ? Win32.SW_SHOW : Win32.SW_HIDE);
-    }
-
-    private static void RestoreWindowStateForEventDetach(EmbeddedWindowState state)
-    {
-        if (!Win32.IsWindow(state.Hwnd))
-        {
-            return;
-        }
-
-        Win32.SetParent(state.Hwnd, state.OriginalParent);
-
-        Win32.SetLastError(0);
-        Win32.SetWindowLong(state.Hwnd, Win32.GWL_STYLE, state.OriginalStyle);
-        Win32.SetLastError(0);
-        Win32.SetWindowLong(state.Hwnd, Win32.GWL_EXSTYLE, state.OriginalExStyle);
-
-        ApplyFrameChange(state.Hwnd, out _);
-        RestoreDefaultBorderStyle(state.Hwnd);
     }
 
     private bool FitWindowToHost(EmbeddedWindowState state, bool force, out int errorCode)
@@ -630,8 +504,6 @@ internal sealed class WindowEmbedder : IDisposable
         public EmbeddedWindowState(
             IntPtr hwnd,
             IntPtr hostHandle,
-            uint processId,
-            uint threadId,
             IntPtr originalParent,
             int originalStyle,
             int originalExStyle,
@@ -643,8 +515,6 @@ internal sealed class WindowEmbedder : IDisposable
         {
             Hwnd = hwnd;
             HostHandle = hostHandle;
-            ProcessId = processId;
-            ThreadId = threadId;
             OriginalParent = originalParent;
             OriginalStyle = originalStyle;
             OriginalExStyle = originalExStyle;
@@ -662,15 +532,10 @@ internal sealed class WindowEmbedder : IDisposable
             ClientInsetTop = 0;
             ClientInsetRight = 0;
             ClientInsetBottom = 0;
-            LastFullscreenCandidate = IntPtr.Zero;
-            LastFullscreenSignalTick = 0;
-            FullscreenSignalCount = 0;
         }
 
         public IntPtr Hwnd { get; }
         public IntPtr HostHandle { get; }
-        public uint ProcessId { get; }
-        public uint ThreadId { get; }
         public IntPtr OriginalParent { get; }
         public int OriginalStyle { get; }
         public int OriginalExStyle { get; }
@@ -688,9 +553,6 @@ internal sealed class WindowEmbedder : IDisposable
         public int ClientInsetTop { get; private set; }
         public int ClientInsetRight { get; private set; }
         public int ClientInsetBottom { get; private set; }
-        public IntPtr LastFullscreenCandidate { get; set; }
-        public long LastFullscreenSignalTick { get; set; }
-        public int FullscreenSignalCount { get; set; }
 
         public void UpdateClientInsets()
         {
