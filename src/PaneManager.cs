@@ -11,6 +11,7 @@ internal sealed class PaneManager
     private readonly Dictionary<Panel, Panel> _paneHosts = new();
     private readonly Dictionary<Panel, Panel> _paneOverlays = new();
     private readonly Dictionary<Panel, ListBox> _panePickers = new();
+    private readonly Dictionary<ListBox, Font> _pickerDetailsFonts = new();
     private readonly Dictionary<ListBox, Panel> _pickerHeaderRows = new();
     private readonly Dictionary<ListBox, Label> _pickerHeaders = new();
     private readonly Dictionary<ListBox, Button> _pickerRefreshButtons = new();
@@ -34,6 +35,12 @@ internal sealed class PaneManager
         _paneHosts.Clear();
         _paneOverlays.Clear();
         _panePickers.Clear();
+        foreach (var font in _pickerDetailsFonts.Values)
+        {
+            font.Dispose();
+        }
+
+        _pickerDetailsFonts.Clear();
         _pickerHeaderRows.Clear();
         _pickerHeaders.Clear();
         _pickerRefreshButtons.Clear();
@@ -203,7 +210,7 @@ internal sealed class PaneManager
             ItemHeight = 46,
             Font = new Font("Segoe UI", 10f, FontStyle.Regular, GraphicsUnit.Point)
         };
-        UpdatePickerMetrics(picker);
+        UpdatePickerFontResources(picker);
         _pickerHoverIndices[picker] = -1;
 
         pickerCard.Controls.Add(picker);
@@ -232,7 +239,7 @@ internal sealed class PaneManager
         picker.DrawItem += OnPanePickerDrawItem;
         picker.MouseMove += (_, e) => OnPanePickerMouseMove(picker, e);
         picker.MouseLeave += (_, _) => OnPanePickerMouseLeave(picker);
-        picker.FontChanged += (_, _) => UpdatePickerMetrics(picker);
+        picker.FontChanged += (_, _) => UpdatePickerFontResources(picker);
         pickerHeaderRow.Resize += (_, _) => UpdateHeaderMetrics(picker);
 
         UpdateHeaderMetrics(picker);
@@ -265,6 +272,7 @@ internal sealed class PaneManager
             }
 
             picker.EndUpdate();
+            _pickerHoverIndices[picker] = -1;
             if (picker.Items.Count > 0)
             {
                 picker.SelectedIndex = 0;
@@ -356,19 +364,19 @@ internal sealed class PaneManager
             fillColor = Color.FromArgb(44, 44, 44);
         }
 
-        using (var fillBrush = new SolidBrush(fillColor))
-        using (var path = CreateRoundedPath(rowRect, ScaleForDpi(6, picker.DeviceDpi)))
-        {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.FillPath(fillBrush, path);
-        }
+        using var fillBrush = new SolidBrush(fillColor);
+        e.Graphics.FillRectangle(fillBrush, rowRect);
 
         if (picker.Items[e.Index] is WindowPicker.WindowItem item)
         {
             var textWidth = Math.Max(0, rowRect.Width - (horizontalPadding * 2));
             var titleRect = new Rectangle(rowRect.Left + horizontalPadding, rowRect.Top + topPadding, textWidth, titleHeight);
             var processRect = new Rectangle(rowRect.Left + horizontalPadding, rowRect.Top + processTop, textWidth, processHeight);
-            using var detailsFont = new Font("Segoe UI", Math.Max(7.5f, picker.Font.SizeInPoints - 1.5f), FontStyle.Regular, GraphicsUnit.Point);
+            if (!_pickerDetailsFonts.TryGetValue(picker, out var detailsFont))
+            {
+                detailsFont = new Font("Segoe UI", Math.Max(7.5f, picker.Font.SizeInPoints - 1.5f), FontStyle.Regular, GraphicsUnit.Point);
+                _pickerDetailsFonts[picker] = detailsFont;
+            }
 
             TextRenderer.DrawText(
                 e.Graphics,
@@ -404,7 +412,8 @@ internal sealed class PaneManager
         }
 
         _pickerHoverIndices[picker] = hoveredIndex;
-        picker.Invalidate();
+        InvalidatePickerItem(picker, previousIndex);
+        InvalidatePickerItem(picker, hoveredIndex);
     }
 
     private void OnPanePickerMouseLeave(ListBox picker)
@@ -415,7 +424,7 @@ internal sealed class PaneManager
         }
 
         _pickerHoverIndices[picker] = -1;
-        picker.Invalidate();
+        InvalidatePickerItem(picker, previousIndex);
     }
 
     private void OnEmbeddedWindowDetached(Panel pane)
@@ -522,11 +531,24 @@ internal sealed class PaneManager
     private static void UpdatePickerMetrics(ListBox picker)
     {
         var primaryTextHeight = TextRenderer.MeasureText("Ag", picker.Font).Height;
-        using var detailsFont = new Font("Segoe UI", Math.Max(7.5f, picker.Font.SizeInPoints - 1.5f), FontStyle.Regular, GraphicsUnit.Point);
+        var detailsFont = new Font("Segoe UI", Math.Max(7.5f, picker.Font.SizeInPoints - 1.5f), FontStyle.Regular, GraphicsUnit.Point);
         var secondaryTextHeight = TextRenderer.MeasureText("Ag", detailsFont).Height;
+        detailsFont.Dispose();
         var verticalPadding = ScaleForDpi(16, picker.DeviceDpi);
         picker.ItemHeight = Math.Max(40, primaryTextHeight + secondaryTextHeight + verticalPadding);
         picker.Invalidate();
+    }
+
+    private void UpdatePickerFontResources(ListBox picker)
+    {
+        if (_pickerDetailsFonts.TryGetValue(picker, out var existingFont))
+        {
+            existingFont.Dispose();
+            _pickerDetailsFonts.Remove(picker);
+        }
+
+        _pickerDetailsFonts[picker] = new Font("Segoe UI", Math.Max(7.5f, picker.Font.SizeInPoints - 1.5f), FontStyle.Regular, GraphicsUnit.Point);
+        UpdatePickerMetrics(picker);
     }
 
     private void UpdateHeaderMetrics(ListBox picker)
@@ -560,6 +582,16 @@ internal sealed class PaneManager
     private static int ScaleForDpi(int value, int dpi)
     {
         return (int)Math.Round(value * (dpi / 96d));
+    }
+
+    private static void InvalidatePickerItem(ListBox picker, int index)
+    {
+        if (index < 0 || index >= picker.Items.Count)
+        {
+            return;
+        }
+
+        picker.Invalidate(picker.GetItemRectangle(index));
     }
 
     private sealed class PaneHostPanel : Panel
