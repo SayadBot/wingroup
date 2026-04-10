@@ -18,7 +18,8 @@ internal sealed class WindowPicker
         Win32.EnumWindows(EnumWindow, IntPtr.Zero);
 
         return _items
-            .OrderBy(item => item.DisplayText)
+            .OrderBy(item => item.Title)
+            .ThenBy(item => item.ProcessName)
             .ToList();
     }
 
@@ -80,12 +81,13 @@ internal sealed class WindowPicker
             processName = "Unknown";
         }
 
-        _items.Add(new WindowItem(hwnd, $"{title} ({processName})"));
+        _items.Add(new WindowItem(hwnd, title, processName));
         return true;
     }
 
-    internal sealed record WindowItem(IntPtr Hwnd, string DisplayText)
+    internal sealed record WindowItem(IntPtr Hwnd, string Title, string ProcessName)
     {
+        public string DisplayText => $"{Title} ({ProcessName})";
         public override string ToString() => DisplayText;
     }
 }
