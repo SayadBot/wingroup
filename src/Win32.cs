@@ -41,6 +41,22 @@ internal static class Win32
     public const int WM_SETTINGCHANGE = 0x001A;
     public const int WM_THEMECHANGED = 0x031A;
     public const int WM_EXITSIZEMOVE = 0x0232;
+    public const int WM_NCCALCSIZE = 0x0083;
+    public const int WM_NCHITTEST = 0x0084;
+
+    public const int HTCLIENT = 1;
+    public const int HTLEFT = 10;
+    public const int HTRIGHT = 11;
+    public const int HTTOP = 12;
+    public const int HTTOPLEFT = 13;
+    public const int HTTOPRIGHT = 14;
+    public const int HTBOTTOM = 15;
+    public const int HTBOTTOMLEFT = 16;
+    public const int HTBOTTOMRIGHT = 17;
+
+    public const int SM_CXSIZEFRAME = 32;
+    public const int SM_CYSIZEFRAME = 33;
+    public const int SM_CXPADDEDBORDER = 92;
 
     public const uint DWMWA_BORDER_COLOR = 34;
     public const uint DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
@@ -92,6 +108,15 @@ internal static class Win32
         public POINT ptMinPosition;
         public POINT ptMaxPosition;
         public RECT rcNormalPosition;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NCCALCSIZE_PARAMS
+    {
+        public RECT rgrc0;
+        public RECT rgrc1;
+        public RECT rgrc2;
+        public IntPtr lppos;
     }
 
     [DllImport("user32.dll")]
@@ -187,4 +212,7 @@ internal static class Win32
 
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
 }

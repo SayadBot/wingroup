@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace WinGroup;
 
 public sealed class ShellForm : Form
@@ -63,6 +65,8 @@ public sealed class ShellForm : Form
         get
         {
             var cp = base.CreateParams;
+            cp.Style &= ~Win32.WS_CAPTION;
+            cp.Style |= Win32.WS_THICKFRAME;
             cp.ExStyle |= Win32.WS_EX_APPWINDOW;
             cp.ExStyle &= ~Win32.WS_EX_TOOLWINDOW;
             return cp;
@@ -77,7 +81,19 @@ public sealed class ShellForm : Form
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == Win32.WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
+        {
+            base.WndProc(ref m);
+            AdjustClientTopInset(ref m);
+            return;
+        }
+
         base.WndProc(ref m);
+
+        if (m.Msg == Win32.WM_NCHITTEST)
+        {
+            ApplyResizeHitTest(ref m);
+        }
 
         if (m.Msg == Win32.WM_SETTINGCHANGE || m.Msg == Win32.WM_THEMECHANGED)
         {
@@ -140,6 +156,86 @@ public sealed class ShellForm : Form
     {
         _currentMonitorDeviceName = Screen.FromHandle(Handle).DeviceName;
         SaveWindowState();
+    }
+
+    private void AdjustClientTopInset(ref Message m)
+    {
+        if (WindowState != FormWindowState.Normal || m.LParam == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var parameters = Marshal.PtrToStructure<Win32.NCCALCSIZE_PARAMS>(m.LParam);
+        var topInset = Win32.GetSystemMetrics(Win32.SM_CYSIZEFRAME) + Win32.GetSystemMetrics(Win32.SM_CXPADDEDBORDER);
+        parameters.rgrc0.Top -= topInset;
+        Marshal.StructureToPtr(parameters, m.LParam, false);
+        m.Result = IntPtr.Zero;
+    }
+
+    private void ApplyResizeHitTest(ref Message m)
+    {
+        if (WindowState != FormWindowState.Normal || m.Result != (IntPtr)Win32.HTCLIENT)
+        {
+            return;
+        }
+
+        var raw = m.LParam.ToInt64();
+        var x = unchecked((short)(raw & 0xFFFF));
+        var y = unchecked((short)((raw >> 16) & 0xFFFF));
+        var point = PointToClient(new Point(x, y));
+        var border = Math.Max(4, Win32.GetSystemMetrics(Win32.SM_CXSIZEFRAME) + Win32.GetSystemMetrics(Win32.SM_CXPADDEDBORDER));
+
+        var onLeft = point.X < border;
+        var onRight = point.X >= ClientSize.Width - border;
+        var onTop = point.Y < border;
+        var onBottom = point.Y >= ClientSize.Height - border;
+
+        if (onLeft && onTop)
+        {
+            m.Result = (IntPtr)Win32.HTTOPLEFT;
+            return;
+        }
+
+        if (onRight && onTop)
+        {
+            m.Result = (IntPtr)Win32.HTTOPRIGHT;
+            return;
+        }
+
+        if (onLeft && onBottom)
+        {
+            m.Result = (IntPtr)Win32.HTBOTTOMLEFT;
+            return;
+        }
+
+        if (onRight && onBottom)
+        {
+            m.Result = (IntPtr)Win32.HTBOTTOMRIGHT;
+            return;
+        }
+
+        if (onLeft)
+        {
+            m.Result = (IntPtr)Win32.HTLEFT;
+            return;
+        }
+
+        if (onRight)
+        {
+            m.Result = (IntPtr)Win32.HTRIGHT;
+            return;
+        }
+
+        if (onTop)
+        {
+            m.Result = (IntPtr)Win32.HTTOP;
+            return;
+        }
+
+        if (onBottom)
+        {
+            m.Result = (IntPtr)Win32.HTBOTTOM;
+        }
     }
 
     private void SaveWindowState()
