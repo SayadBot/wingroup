@@ -24,6 +24,7 @@ public sealed class ShellForm : Form
     private readonly System.Windows.Forms.Timer _floatingTitleBarTimer;
     private string? _currentMonitorDeviceName;
     private Panel? _floatingTitleBar;
+    private Button? _floatingMaximizeButton;
 
     public ShellForm()
     {
@@ -208,19 +209,20 @@ public sealed class ShellForm : Form
             TextAlign = ContentAlignment.MiddleLeft
         };
 
-        var closeButton = CreateTitleButton("X");
+        var closeButton = CreateTitleButton(TitleButtonKind.Close);
         closeButton.Click += (_, _) => Close();
 
-        var maximizeButton = CreateTitleButton("[]");
+        var maximizeButton = CreateTitleButton(TitleButtonKind.MaximizeRestore);
         maximizeButton.Click += (_, _) => ToggleMaximize();
+        _floatingMaximizeButton = maximizeButton;
 
-        var minimizeButton = CreateTitleButton("_");
+        var minimizeButton = CreateTitleButton(TitleButtonKind.Minimize);
         minimizeButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
         bar.Controls.Add(title);
-        bar.Controls.Add(closeButton);
-        bar.Controls.Add(maximizeButton);
         bar.Controls.Add(minimizeButton);
+        bar.Controls.Add(maximizeButton);
+        bar.Controls.Add(closeButton);
 
         title.MouseDown += OnFloatingTitleBarMouseDown;
         title.DoubleClick += OnFloatingTitleBarDoubleClick;
@@ -232,7 +234,7 @@ public sealed class ShellForm : Form
         _floatingTitleBar = bar;
     }
 
-    private static Button CreateTitleButton(string text)
+    private Button CreateTitleButton(TitleButtonKind kind)
     {
         var button = new Button
         {
@@ -240,8 +242,7 @@ public sealed class ShellForm : Form
             Width = 34,
             FlatStyle = FlatStyle.Flat,
             TabStop = false,
-            Text = text,
-            Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point),
+            Text = string.Empty,
             ForeColor = Color.FromArgb(230, 230, 230),
             BackColor = Color.FromArgb(44, 44, 44),
             Margin = Padding.Empty
@@ -249,7 +250,47 @@ public sealed class ShellForm : Form
         button.FlatAppearance.BorderSize = 0;
         button.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 58, 58);
         button.FlatAppearance.MouseDownBackColor = Color.FromArgb(68, 68, 68);
+        button.Paint += (_, e) => DrawTitleButtonIcon(button, e, kind);
         return button;
+    }
+
+    private void DrawTitleButtonIcon(Button button, PaintEventArgs e, TitleButtonKind kind)
+    {
+        var stroke = Math.Max(1, ScaleForDpi(1, button.DeviceDpi));
+        var padding = ScaleForDpi(10, button.DeviceDpi);
+        var iconWidth = Math.Max(10, button.ClientSize.Width - (padding * 2));
+        var iconHeight = Math.Max(10, button.ClientSize.Height - (padding * 2));
+        var left = (button.ClientSize.Width - iconWidth) / 2;
+        var top = (button.ClientSize.Height - iconHeight) / 2;
+        var rect = new Rectangle(left, top, iconWidth, iconHeight);
+
+        using var pen = new Pen(button.ForeColor, stroke);
+        pen.Alignment = System.Drawing.Drawing2D.PenAlignment.Center;
+
+        if (kind == TitleButtonKind.Minimize)
+        {
+            var y = rect.Bottom - (stroke + 1);
+            e.Graphics.DrawLine(pen, rect.Left, y, rect.Right, y);
+            return;
+        }
+
+        if (kind == TitleButtonKind.MaximizeRestore)
+        {
+            if (WindowState == FormWindowState.Maximized)
+            {
+                var back = new Rectangle(rect.Left, rect.Top + stroke + 1, rect.Width - stroke - 1, rect.Height - stroke - 1);
+                var front = new Rectangle(rect.Left + stroke + 2, rect.Top, rect.Width - stroke - 1, rect.Height - stroke - 1);
+                e.Graphics.DrawRectangle(pen, back);
+                e.Graphics.DrawRectangle(pen, front);
+                return;
+            }
+
+            e.Graphics.DrawRectangle(pen, rect);
+            return;
+        }
+
+        e.Graphics.DrawLine(pen, rect.Left, rect.Top, rect.Right, rect.Bottom);
+        e.Graphics.DrawLine(pen, rect.Right, rect.Top, rect.Left, rect.Bottom);
     }
 
     private void UpdateFloatingTitleBarBounds()
@@ -286,6 +327,8 @@ public sealed class ShellForm : Form
         {
             _floatingTitleBar.BringToFront();
         }
+
+        _floatingMaximizeButton?.Invalidate();
     }
 
     private void OnFloatingTitleBarMouseDown(object? sender, MouseEventArgs e)
@@ -309,11 +352,19 @@ public sealed class ShellForm : Form
         WindowState = WindowState == FormWindowState.Maximized
             ? FormWindowState.Normal
             : FormWindowState.Maximized;
+        _floatingMaximizeButton?.Invalidate();
     }
 
     private static int ScaleForDpi(int value, int dpi)
     {
         return (int)Math.Round(value * (dpi / 96f));
+    }
+
+    private enum TitleButtonKind
+    {
+        Minimize,
+        MaximizeRestore,
+        Close
     }
 
     private void AdjustClientTopInset(ref Message m)
