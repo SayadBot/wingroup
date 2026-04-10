@@ -43,7 +43,9 @@ internal static class Win32
     public const int WM_EXITSIZEMOVE = 0x0232;
     public const int WM_NCCALCSIZE = 0x0083;
     public const int WM_NCHITTEST = 0x0084;
+    public const int WM_NCLBUTTONDOWN = 0x00A1;
 
+    public const int HTCAPTION = 2;
     public const int HTCLIENT = 1;
     public const int HTLEFT = 10;
     public const int HTRIGHT = 11;
@@ -215,4 +217,10 @@ internal static class Win32
 
     [DllImport("user32.dll")]
     public static extern int GetSystemMetrics(int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 }

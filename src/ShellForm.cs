@@ -11,11 +11,19 @@ public sealed class ShellForm : Form
     private const string WidthValue = "Width";
     private const string HeightValue = "Height";
     private const string IsMaximizedValue = "IsMaximized";
+    private const string AppTitle = "WinGroup";
+    private const int FloatingBarTimerInterval = 50;
+    private const int FloatingBarHoverHeight = 12;
+    private const int FloatingBarTopMargin = 8;
+    private const int FloatingBarHeight = 34;
+    private const int FloatingBarWidth = 320;
 
     private readonly WindowEmbedder _windowEmbedder;
     private readonly WindowPicker _windowPicker;
     private readonly PaneManager _paneManager;
+    private readonly System.Windows.Forms.Timer _floatingTitleBarTimer;
     private string? _currentMonitorDeviceName;
+    private Panel? _floatingTitleBar;
 
     public ShellForm()
     {
@@ -52,10 +60,13 @@ public sealed class ShellForm : Form
         _windowEmbedder = new WindowEmbedder(this);
         _windowPicker = new WindowPicker();
         _paneManager = new PaneManager(this, _windowEmbedder, _windowPicker);
+        _floatingTitleBarTimer = new System.Windows.Forms.Timer { Interval = FloatingBarTimerInterval };
+        _floatingTitleBarTimer.Tick += OnFloatingTitleBarTimerTick;
 
         Load += OnLoad;
         Resize += OnResize;
         Activated += OnActivated;
+        DpiChanged += OnDpiChanged;
         FormClosing += OnFormClosing;
         FormClosed += OnFormClosed;
     }
@@ -77,6 +88,9 @@ public sealed class ShellForm : Form
     {
         ApplyMainWindowTheme();
         _paneManager.Initialize();
+        CreateFloatingTitleBar();
+        UpdateFloatingTitleBarBounds();
+        _floatingTitleBarTimer.Start();
     }
 
     protected override void WndProc(ref Message m)
@@ -110,12 +124,18 @@ public sealed class ShellForm : Form
     {
         if (WindowState == FormWindowState.Minimized)
         {
+            if (_floatingTitleBar != null)
+            {
+                _floatingTitleBar.Visible = false;
+            }
+
             _windowEmbedder.HideAllChildren();
             return;
         }
 
         _windowEmbedder.ShowAllChildren();
         _paneManager.ResizeEmbeddedWindows();
+        UpdateFloatingTitleBarBounds();
     }
 
     private void OnActivated(object? sender, EventArgs e)
@@ -125,7 +145,14 @@ public sealed class ShellForm : Form
 
     private void OnFormClosed(object? sender, FormClosedEventArgs e)
     {
+        _floatingTitleBarTimer.Stop();
+        _floatingTitleBarTimer.Dispose();
         _windowEmbedder.Dispose();
+    }
+
+    private void OnDpiChanged(object? sender, DpiChangedEventArgs e)
+    {
+        UpdateFloatingTitleBarBounds();
     }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
@@ -156,6 +183,137 @@ public sealed class ShellForm : Form
     {
         _currentMonitorDeviceName = Screen.FromHandle(Handle).DeviceName;
         SaveWindowState();
+    }
+
+    private void CreateFloatingTitleBar()
+    {
+        if (_floatingTitleBar != null)
+        {
+            return;
+        }
+
+        var bar = new Panel
+        {
+            Visible = false,
+            BackColor = Color.FromArgb(34, 34, 34),
+            Padding = new Padding(8, 4, 8, 4)
+        };
+
+        var title = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = AppTitle,
+            ForeColor = Color.FromArgb(235, 235, 235),
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold, GraphicsUnit.Point),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        var closeButton = CreateTitleButton("X");
+        closeButton.Click += (_, _) => Close();
+
+        var maximizeButton = CreateTitleButton("[]");
+        maximizeButton.Click += (_, _) => ToggleMaximize();
+
+        var minimizeButton = CreateTitleButton("_");
+        minimizeButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
+
+        bar.Controls.Add(title);
+        bar.Controls.Add(closeButton);
+        bar.Controls.Add(maximizeButton);
+        bar.Controls.Add(minimizeButton);
+
+        title.MouseDown += OnFloatingTitleBarMouseDown;
+        title.DoubleClick += OnFloatingTitleBarDoubleClick;
+        bar.MouseDown += OnFloatingTitleBarMouseDown;
+        bar.DoubleClick += OnFloatingTitleBarDoubleClick;
+
+        Controls.Add(bar);
+        bar.BringToFront();
+        _floatingTitleBar = bar;
+    }
+
+    private static Button CreateTitleButton(string text)
+    {
+        var button = new Button
+        {
+            Dock = DockStyle.Right,
+            Width = 34,
+            FlatStyle = FlatStyle.Flat,
+            TabStop = false,
+            Text = text,
+            Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point),
+            ForeColor = Color.FromArgb(230, 230, 230),
+            BackColor = Color.FromArgb(44, 44, 44),
+            Margin = Padding.Empty
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 58, 58);
+        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(68, 68, 68);
+        return button;
+    }
+
+    private void UpdateFloatingTitleBarBounds()
+    {
+        if (_floatingTitleBar == null)
+        {
+            return;
+        }
+
+        var margin = ScaleForDpi(FloatingBarTopMargin, DeviceDpi);
+        var height = ScaleForDpi(FloatingBarHeight, DeviceDpi);
+        var width = Math.Min(Math.Max(ScaleForDpi(220, DeviceDpi), ScaleForDpi(FloatingBarWidth, DeviceDpi)), Math.Max(120, ClientSize.Width - (margin * 2)));
+        var x = (ClientSize.Width - width) / 2;
+
+        _floatingTitleBar.Bounds = new Rectangle(Math.Max(0, x), margin, width, height);
+        _floatingTitleBar.BringToFront();
+    }
+
+    private void OnFloatingTitleBarTimerTick(object? sender, EventArgs e)
+    {
+        if (_floatingTitleBar == null || WindowState == FormWindowState.Minimized)
+        {
+            return;
+        }
+
+        var cursor = Cursor.Position;
+        var windowBounds = Bounds;
+        var insideWindow = windowBounds.Contains(cursor);
+        var hoverHeight = ScaleForDpi(FloatingBarHoverHeight, DeviceDpi);
+        var nearTop = insideWindow && cursor.Y <= windowBounds.Top + hoverHeight;
+        var overBar = _floatingTitleBar.Visible && RectangleToScreen(_floatingTitleBar.Bounds).Contains(cursor);
+        _floatingTitleBar.Visible = nearTop || overBar;
+        if (_floatingTitleBar.Visible)
+        {
+            _floatingTitleBar.BringToFront();
+        }
+    }
+
+    private void OnFloatingTitleBarMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        Win32.ReleaseCapture();
+        Win32.SendMessage(Handle, Win32.WM_NCLBUTTONDOWN, (IntPtr)Win32.HTCAPTION, IntPtr.Zero);
+    }
+
+    private void OnFloatingTitleBarDoubleClick(object? sender, EventArgs e)
+    {
+        ToggleMaximize();
+    }
+
+    private void ToggleMaximize()
+    {
+        WindowState = WindowState == FormWindowState.Maximized
+            ? FormWindowState.Normal
+            : FormWindowState.Maximized;
+    }
+
+    private static int ScaleForDpi(int value, int dpi)
+    {
+        return (int)Math.Round(value * (dpi / 96f));
     }
 
     private void AdjustClientTopInset(ref Message m)
