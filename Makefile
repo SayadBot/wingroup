@@ -33,11 +33,11 @@ icon: setup
 restore:
 	dotnet restore $(PROJECT)
 
-build: icon restore
-	dotnet build $(PROJECT) -c $(CONFIG)
-
 run: icon
 	dotnet run --project $(PROJECT)
+
+build: icon restore
+	dotnet build $(PROJECT) -c $(CONFIG)
 
 publish: icon restore
 	dotnet publish $(PROJECT) -c $(CONFIG) -r $(RID) --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$(VERSION) -p:InformationalVersion=$(INFO_VERSION) -o $(OUT_DIR)
